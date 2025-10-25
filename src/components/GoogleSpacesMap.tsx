@@ -50,6 +50,7 @@ export const GoogleSpacesMap = ({
   const markersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
 
+  // Initialize map once
   useEffect(() => {
     const initMap = async () => {
       if (!containerRef.current || mapRef.current) return;
@@ -86,56 +87,6 @@ export const GoogleSpacesMap = ({
         });
 
         mapRef.current = map;
-
-        // Create a Places service
-        const service = new google.maps.places.PlacesService(map);
-
-        // Search for places near each venue location
-        venues.forEach((location) => {
-          const request = {
-            location: { lat: location.lat, lng: location.lng },
-            radius: 50, // Search within 50 meters
-            keyword: location.name,
-          };
-
-          service.nearbySearch(request, (results, status) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0]) {
-              const place = results[0];
-              
-              // Create an info window that will show on click
-              const infoWindow = new google.maps.InfoWindow();
-              
-              // Create a marker for this place
-              const marker = new google.maps.Marker({
-                map,
-                position: place.geometry?.location,
-                title: place.name,
-              });
-
-              // Add click listener
-              marker.addListener('click', () => {
-                if (onVenueSelect && location.id) {
-                  onVenueSelect(location);
-                }
-                
-                const count = location.id ? locationCounts[location.id] || 0 : 0;
-                const content = `
-                  <div style="padding: 8px;">
-                    <h3 style="margin: 0 0 8px 0; font-weight: bold;">${location.name}</h3>
-                    <p style="margin: 0; font-size: 14px;">${count} ${count === 1 ? 'person' : 'people'} open to connect</p>
-                  </div>
-                `;
-                infoWindow.setContent(content);
-                infoWindow.open(map, marker);
-              });
-
-              if (location.id) {
-                markersRef.current.set(location.id, marker as any);
-              }
-            }
-          });
-        });
-
         setIsLoading(false);
       } catch (error) {
         console.error('Error loading Google Maps:', error);
@@ -151,17 +102,68 @@ export const GoogleSpacesMap = ({
         (marker as any).setMap(null);
       });
       markersRef.current.clear();
-      mapRef.current = null;
+      if (mapRef.current) {
+        mapRef.current = null;
+      }
     };
-  }, [venues, onVenueSelect]);
+  }, []); // Only initialize once
 
-  // Update markers when counts change
+  // Update markers when venues or callbacks change
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Markers will update through the info windows when clicked
-    // No need to modify marker appearance
-  }, [selectedVenueId, locationCounts, venues]);
+    const map = mapRef.current;
+    const service = new google.maps.places.PlacesService(map);
+
+    // Clear existing markers
+    markersRef.current.forEach(marker => {
+      (marker as any).setMap(null);
+    });
+    markersRef.current.clear();
+
+    // Create new markers
+    venues.forEach((location) => {
+      const request = {
+        location: { lat: location.lat, lng: location.lng },
+        radius: 50,
+        keyword: location.name,
+      };
+
+      service.nearbySearch(request, (results, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0]) {
+          const place = results[0];
+          
+          const infoWindow = new google.maps.InfoWindow();
+          
+          const marker = new google.maps.Marker({
+            map,
+            position: place.geometry?.location,
+            title: place.name,
+          });
+
+          marker.addListener('click', () => {
+            if (onVenueSelect && location.id) {
+              onVenueSelect(location);
+            }
+            
+            const count = location.id ? locationCounts[location.id] || 0 : 0;
+            const content = `
+              <div style="padding: 8px;">
+                <h3 style="margin: 0 0 8px 0; font-weight: bold;">${location.name}</h3>
+                <p style="margin: 0; font-size: 14px;">${count} ${count === 1 ? 'person' : 'people'} open to connect</p>
+              </div>
+            `;
+            infoWindow.setContent(content);
+            infoWindow.open(map, marker);
+          });
+
+          if (location.id) {
+            markersRef.current.set(location.id, marker as any);
+          }
+        }
+      });
+    });
+  }, [venues, onVenueSelect, locationCounts]);
 
   return (
     <div className="relative w-full rounded-3xl overflow-hidden shadow-soft" style={{ height }}>
