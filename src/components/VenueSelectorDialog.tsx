@@ -143,11 +143,17 @@ export const VenueSelectorDialog = ({
               <Loader2 className="w-8 h-8 animate-spin text-primary mb-3" />
               <p className="text-sm text-muted-foreground">Finding the best spots for you...</p>
             </div>
+          ) : venues.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <p className="text-sm text-muted-foreground mb-2">No venues found</p>
+              <p className="text-xs text-muted-foreground">Try adjusting your interests or check back later</p>
+            </div>
           ) : (
             <>
-              <h3 className="font-semibold text-sm text-muted-foreground mb-3">
-                Top {venues.length} venues from Google Maps
-              </h3>
+              <h3 className="font-semibold text-lg mb-1">Top {venues.length} Recommended Spots</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Personalized for your shared interests • Scroll down to explore on map
+              </p>
               <div className="space-y-3">
                 {venues.map((venue) => (
               <div
