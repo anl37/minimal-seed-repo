@@ -9,6 +9,7 @@ import { GoogleSpacesMap } from "./GoogleSpacesMap";
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_CITY_CENTER } from "@/config/city";
 import { toast } from "sonner";
+import { getPersonalizedVenues } from "@/lib/venue-matching";
 
 interface VenueSelectorDialogProps {
   open: boolean;
@@ -39,52 +40,71 @@ export const VenueSelectorDialog = ({
     if (open && connection) {
       setIsLoading(true);
       setVenues([]);
-      
+
       const allInterests = [...new Set([...commonInterests])];
-      
-      supabase.functions.invoke('search-places', {
-        body: {
-          lat: DEFAULT_CITY_CENTER.lat,
-          lng: DEFAULT_CITY_CENTER.lng,
-          interests: allInterests,
-          radius: 1000, // 1km radius
-        }
-      }).then(({ data, error }) => {
-        if (error) {
-          console.error('Error fetching places:', error);
-          toast.error('Failed to load venues');
-          setIsLoading(false);
-          return;
-        }
-        
-        if (data?.places) {
-          const mappedVenues: VenueSuggestion[] = data.places.map((place: any) => {
-            const distanceM = metersBetween(
-              DEFAULT_CITY_CENTER.lat,
-              DEFAULT_CITY_CENTER.lng,
-              place.lat,
-              place.lng
-            );
-            
-            return {
-              id: place.id,
-              name: place.name,
-              category: formatCategory(place.category),
-              lat: place.lat,
-              lng: place.lng,
-              distanceM,
-              matchScore: Math.floor(place.rating * 20), // Convert 0-5 rating to 0-100 score
-              tags: place.types?.slice(0, 3) || [],
-              openNow: place.openNow,
-              rating: place.rating,
-              description: place.vicinity || '',
-            };
-          });
-          
-          setVenues(mappedVenues);
-        }
-        setIsLoading(false);
-      });
+
+      const useFallback = () => {
+        const fallback = getPersonalizedVenues({
+          userInterests: allInterests,
+          connectionInterests: allInterests,
+          maxResults: 10,
+        });
+        setVenues(fallback);
+      };
+
+      supabase.functions
+        .invoke('search-places', {
+          body: {
+            lat: DEFAULT_CITY_CENTER.lat,
+            lng: DEFAULT_CITY_CENTER.lng,
+            interests: allInterests,
+            radius: 1200, // slightly wider for better results
+          },
+        })
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('Error fetching places:', error);
+            toast.error('Failed to load venues');
+            useFallback();
+            return;
+          }
+
+          if (data?.places?.length) {
+            const mappedVenues: VenueSuggestion[] = data.places.map((place: any) => {
+              const distanceM = metersBetween(
+                DEFAULT_CITY_CENTER.lat,
+                DEFAULT_CITY_CENTER.lng,
+                place.lat,
+                place.lng
+              );
+
+              return {
+                id: place.id,
+                name: place.name,
+                category: formatCategory(place.category),
+                lat: place.lat,
+                lng: place.lng,
+                distanceM,
+                matchScore: Math.min(100, Math.floor((place.rating || 0) * 20) + (place.openNow ? 5 : 0)),
+                tags: place.types?.slice(0, 3) || [],
+                openNow: place.openNow,
+                rating: place.rating,
+                description: place.vicinity || '',
+              };
+            });
+
+            // Ensure only top 10
+            setVenues(mappedVenues.slice(0, 10));
+          } else {
+            useFallback();
+          }
+        })
+        .catch((err) => {
+          console.error('search-places network error:', err);
+          toast.error('Network error loading venues');
+          useFallback();
+        })
+        .finally(() => setIsLoading(false));
     }
   }, [open, connection, commonInterests]);
 
